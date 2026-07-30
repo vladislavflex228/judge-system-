@@ -1,0 +1,14 @@
+package models
+
+import "time"
+
+type TestCase struct {
+	ID          int64     `json:id`
+	TaskID      int64     `json:task_id`
+	Title       string    `json:title`
+	Description *string   `json:description`
+	InputData   string    `json:input_data`
+	OutputData  string    `json:output_data`
+	IsHidden    bool      `is_hidden`
+	CreatedAt   time.Time `created_at`
+}

@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  #1.Сервис базы данных PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: judge_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_DB: judge_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d judge_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  #2.Сервис твоего Go-сервера
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: judge_app
+    ports:
+      - "8081:8080" # ВАЖНО: заменили внешний порт с 8080 на 8081 из-за конфликта с pgAdmin!
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres_password
+      - DB_NAME=judge_db
+      - SERVER_PORT=8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  #3.Сервис pgAdmin
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: judge_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8080:80" # Локально заходит через http://localhost:8080
+    depends_on:
+      - postgres
+    volumes:
+      # СОХРАНЯЕМ НАСТРОЙКИ PGADMIN
+      - pgadmin_data:/var/lib/pgadmin
+
+volumes:
+  postgres_data:
+  pgadmin_data:

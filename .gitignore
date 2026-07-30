@@ -1,0 +1,39 @@
+# Executables and build outputs
+/bin/
+/dist/
+*.exe
+*.exe.manifest
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+judge-server
+worker
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker and Local database volumes
+postgres_data/
+pgadmin_data/
+
+# Goose or Migration binaries
+goose
+
+# Go workspace and coverage
+go.work
+go.work.sum
+coverage.out
