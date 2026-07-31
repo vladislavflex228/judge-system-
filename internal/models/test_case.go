@@ -12,3 +12,7 @@ type TestCase struct {
 	IsHidden    bool      `is_hidden`
 	CreatedAt   time.Time `created_at`
 }
+
+func NewTestCase(task_id int64, title, description, input_data, output_data string, is_hidden bool, created_at time.Time) *TestCase {
+	return &TestCase{TaskID: task_id, Title: title, Description: &description, InputData: input_data, OutputData: output_data, IsHidden: is_hidden, CreatedAt: created_at}
+}

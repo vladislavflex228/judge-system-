@@ -11,3 +11,7 @@ type Task struct {
 	MemoryLimit int       `json:memory_limit_mb`
 	CreatedAt   time.Time `created_at`
 }
+
+func NewTask(language_id, time_limit_ms, memory_limit_mb int, title, description string, created_at time.Time) *Task {
+	return &Task{Title: title, Description: description, LanguageId: language_id, TimeLimit: time_limit_ms, MemoryLimit: memory_limit_mb, CreatedAt: created_at}
+}

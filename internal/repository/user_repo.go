@@ -36,7 +36,7 @@ func (u *UserRepository) GetById(ctx context.Context, id int64) (*models.User, e
 	query := `SELECT id,username,email,hash_password,created_at
 			  FROM users
 			  WHERE id = $1`
-	var user *models.User
+	user := &models.User{}
 
 	err := u.db.QueryRow(ctx, query, id).Scan(
 		&user.ID,

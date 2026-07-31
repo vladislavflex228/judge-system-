@@ -36,7 +36,7 @@ func (t *TestRepository) GetById(ctx context.Context, id int64) (*models.TestCas
 	query := `SELECT id,task_id,title,description,input_data,output_data,is_hidden,created_at
 			  FROM test_cases
 			  WHERE id = $1`
-	var test *models.TestCase
+	test := &models.TestCase{}
 
 	err := t.db.QueryRow(ctx, query, id).Scan(
 		&test.ID,
@@ -52,4 +52,42 @@ func (t *TestRepository) GetById(ctx context.Context, id int64) (*models.TestCas
 	}
 
 	return test, nil
+}
+
+func (t *TestRepository) GetAllTestsByTaskID(ctx context.Context, task_id int64) ([]models.TestCase, error) {
+	query := `SELECT id,task_id,title,description,input_data,output_data,is_hidden,created_at
+			  FROM test_cases
+			  WHERE task_id = $1
+			  ORDER BY id`
+
+	row_cursor, err := t.db.Query(ctx, query, task_id)
+
+	if err != nil {
+		return nil, fmt.Errorf("query error at func GetAllTestsByTaskID : %w", err)
+	}
+
+	defer row_cursor.Close() //row_cursor - сетевой курсор , подключенный к базе данных , требует отключения
+
+	tests := []models.TestCase{}
+
+	for row_cursor.Next() {
+		test := models.TestCase{}
+
+		err := row_cursor.Scan(
+			&test.ID,
+			&test.TaskID,
+			&test.Title,
+			&test.Description,
+			&test.InputData,
+			&test.OutputData,
+			&test.IsHidden)
+
+		if err != nil {
+			return nil, fmt.Errorf("scan error at func GetAllTestsByTaskID : %w ", err)
+		}
+
+		tests = append(tests, test)
+	}
+
+	return tests, nil
 }

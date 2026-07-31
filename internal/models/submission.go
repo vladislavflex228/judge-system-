@@ -13,3 +13,7 @@ type Submission struct {
 	MemoryUsed    int       `json:memory_used_mb`
 	CreatedAt     time.Time `json:created_at`
 }
+
+func NewSubmission(task_id, user_id int64, language_id, execution_time_ms, memory_used_mb int, code, status string, created_at time.Time) *Submission {
+	return &Submission{TaskID: task_id, UserID: user_id, LanguageID: language_id, Code: code, Status: status, ExecutionTime: execution_time_ms, MemoryUsed: memory_used_mb, CreatedAt: created_at}
+}
