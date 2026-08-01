@@ -15,11 +15,11 @@ var (
 	ErrSubmissionNotFound  = errors.New("submission not found")
 )
 
-type CreateSubmissionDTO struct { // Структура состояние Data - Transfer - Object
-	TaskID     int64
-	UserID     int64
-	LanguageID int
-	Code       string
+type CreateSubmissionDTO struct { // Структура-состояние Data - Transfer - Object
+	TaskID     int64  `json:"task_id"`
+	UserID     int64  `json:"user_id"`
+	LanguageID int    `json:"language_id"`
+	Code       string `json:"code"`
 }
 
 type SubmissionRepository interface {
@@ -78,7 +78,7 @@ func (s *submissionService) GetSubmissionByID(ctx context.Context, id int64) (*m
 	return submission, nil
 }
 
-func NewSubmissionService(subRepo SubmissionRepository, taskRepo TaskRepository) SubmissionService {
+func NewSubmissionService(subRepo SubmissionRepository, taskRepo TaskRepository) SubmissionService { // Polymorphism
 	return &submissionService{
 		subRepo:  subRepo,
 		taskRepo: taskRepo,
