@@ -22,7 +22,6 @@ CREATE TABLE tasks (
     id BIGSERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
-    language_id INT NOT NULL REFERENCES languages(id) ON DELETE CASCADE,
     time_limit_ms INT NOT NULL default 1000,
     memory_limit_mb INT NOT NULL default 256,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

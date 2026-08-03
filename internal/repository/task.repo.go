@@ -17,14 +17,13 @@ func NewTaskRepository(db *pgxpool.Pool) *TaskRepository {
 }
 
 func (t *TaskRepository) Create(ctx context.Context, task *models.Task) error {
-	query := `INSERT INTO tasks (title,description,language_id,time_limit_ms,memory_limit_mb,created_at)
-			  VALUES ($1,$2,$3,$4,$5,NOW())
+	query := `INSERT INTO tasks (title,description,time_limit_ms,memory_limit_mb,created_at)
+			  VALUES ($1,$2,$3,$4,NOW())
 			  RETURNING id, created_at`
 	err := t.db.QueryRow(
 		ctx, query,
 		task.Title,
 		task.Description,
-		task.LanguageId,
 		task.TimeLimit,
 		task.MemoryLimit).Scan(&task.ID, &task.CreatedAt)
 
@@ -36,7 +35,7 @@ func (t *TaskRepository) Create(ctx context.Context, task *models.Task) error {
 }
 
 func (t *TaskRepository) GetById(ctx context.Context, id int64) (*models.Task, error) {
-	query := `SELECT id,title,description,language_id,time_limit_ms,memory_limit_mb,created_at
+	query := `SELECT id,title,description,time_limit_ms,memory_limit_mb,created_at
 			  FROM tasks
 			  WHERE id = $1`
 
@@ -46,7 +45,6 @@ func (t *TaskRepository) GetById(ctx context.Context, id int64) (*models.Task, e
 		&task.ID,
 		&task.Title,
 		&task.Description,
-		&task.LanguageId,
 		&task.TimeLimit,
 		&task.MemoryLimit,
 		&task.CreatedAt)

@@ -144,3 +144,7 @@ func (s *SubmissionRepository) GetAllSubmissionsByUserID(ctx context.Context, us
 
 	return submissions, nil
 }
+
+func (s *SubmissionRepository) GetAllTestsForSubmission(ctx context.Context, id int64) ([]models.TestCase, error) {
+
+}

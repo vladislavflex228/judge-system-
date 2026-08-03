@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func ResponseJson(w http.ResponseWriter, status int, payload interface{}) {
@@ -91,7 +93,7 @@ func (h *SubmissionHandler) Get(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(subErr, context.DeadlineExceeded):
 			ResponseError(w, http.StatusGatewayTimeout, subErr.Error(), "Deadline of submission_service was exceeded")
-		case errors.Is(subErr, service.ErrSubmissionNotFound):
+		case errors.Is(subErr, pgx.ErrNoRows):
 			ResponseError(w, http.StatusNotFound, subErr.Error(), "Submission not found")
 		default:
 			ResponseError(w, http.StatusInternalServerError, subErr.Error(), "Internal error")
