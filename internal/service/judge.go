@@ -9,7 +9,7 @@ import (
 )
 
 type JudgeSubmissionRepository interface {
-	GetAllTestsForSubmission(ctx context.Context, id int64) ([]models.TestCase, error)
+	GetAllTestsIdForSubmission(ctx context.Context, id int64) ([]int64, error)
 	GetByID(ctx context.Context, id int64) (*models.Submission, error)
 	SaveById(ctx context.Context, id int64, finalVerdict string, maxTime, maxMem int) error
 }
@@ -22,6 +22,10 @@ type JudgeTaskRepository interface {
 	GetByID(ctx context.Context, id int64) (*models.Task, error)
 }
 
+type JudgeTestRepository interface {
+	GetAllTestsByIdSlice(ctx context.Context, testsId []int64) ([]models.TestCase, error)
+}
+
 type JudgeService interface {
 	JudgeSubmission(ctx context.Context, id int64) error
 }
@@ -30,6 +34,7 @@ type judgeService struct {
 	subRepo       JudgeSubmissionRepository
 	langRepo      JudgeLanguageRepository
 	taskRepo      JudgeTaskRepository
+	testRepo      JudgeTestRepository
 	runnerManager *runner.RunnerManager
 }
 
@@ -39,7 +44,12 @@ func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) error {
 		return ErrInvalidInput
 	}
 
-	testCases, err := s.subRepo.GetAllTestsForSubmission(ctx, id)
+	testCasesId, err := s.subRepo.GetAllTestsIdForSubmission(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	testCases, err := s.testRepo.GetAllTestsByIdSlice(ctx, testCasesId)
 	if err != nil {
 		return err
 	}

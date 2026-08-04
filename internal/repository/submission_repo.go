@@ -145,6 +145,47 @@ func (s *SubmissionRepository) GetAllSubmissionsByUserID(ctx context.Context, us
 	return submissions, nil
 }
 
-func (s *SubmissionRepository) GetAllTestsForSubmission(ctx context.Context, id int64) ([]models.TestCase, error) {
+func (s *SubmissionRepository) GetAllTestsIdForSubmission(ctx context.Context, id int64) ([]int64, error) {
+	query := `
+	SELECT t.id
+	FROM submissions s
+		INNER JOIN test_cases t
+			ON s.task_id = t.task_id
+	WHERE s.id = $1`
 
+	row_cursor, err := s.db.Query(ctx, query, id)
+
+	if err != nil {
+		return nil, fmt.Errorf("error at func Getalltestsbysub : %w", err)
+	}
+
+	defer row_cursor.Close()
+
+	testCasesId := []int64{}
+
+	for row_cursor.Next() {
+		var test_id int64
+		err := row_cursor.Scan(&test_id)
+		if err != nil {
+			return nil, err
+		}
+		testCasesId = append(testCasesId, test_id)
+	}
+
+	return testCasesId, nil
+}
+
+func (s *SubmissionRepository) SaveById(ctx context.Context, id int64, finalVerdict string, maxTime, maxMem int) error {
+	query := `
+	UPDATE submissions 
+	SET status = $1,execution_time_ms = $2, memory_used_mb = $3
+	WHERE id = $4;`
+
+	_, err := s.db.Exec(ctx, query, finalVerdict, maxTime, maxMem, id) // Если мы не делаем SELECT и RETURNING , используем Exec
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
