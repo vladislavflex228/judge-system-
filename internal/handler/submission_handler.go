@@ -4,36 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"judge-system/internal/responces"
 	"judge-system/internal/service"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 )
-
-func ResponseJson(w http.ResponseWriter, status int, payload interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(payload)
-}
-
-type ErrorBody struct {
-	Error struct {
-		Code    string      `json:"code"`
-		Message string      `json:"message"`
-		Details interface{} `json:"details,omitempty"`
-	} `json:"error"`
-}
-
-func ResponseError(w http.ResponseWriter, status int, code, message string) {
-	var resp ErrorBody
-
-	resp.Error.Code = code
-	resp.Error.Message = message
-
-	ResponseJson(w, status, resp)
-}
 
 type SubmissionHandler struct {
 	svr service.SubmissionService
@@ -48,7 +25,8 @@ func (h *SubmissionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var dto service.CreateSubmissionDTO
 
 	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
-		ResponseError(w, http.StatusBadRequest, err.Error(), "Bad request")
+		slog.Warn("Create submission failed : bad JSON format", slog.Any("err", err))
+		responces.ResponseError(w, http.StatusBadRequest, "Invalid JSON format", "Expected task_id,user_id,language_id,code fields")
 		return
 	}
 
@@ -61,16 +39,19 @@ func (h *SubmissionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if subErr != nil {
 		switch {
 		case errors.Is(subErr, context.DeadlineExceeded):
-			ResponseError(w, http.StatusGatewayTimeout, subErr.Error(), "Deadline of submission_service was exceeded")
+			slog.Error("Create submission failed: deadline od responce from bd exceeded", slog.Any("err", subErr))
+			responces.ResponseError(w, http.StatusGatewayTimeout, "Internal server error", "Try again later")
 
 		default:
-			ResponseError(w, http.StatusInternalServerError, subErr.Error(), "Internal error")
+			slog.Error("Create submission failed : bd error", slog.Any("err", subErr))
+			responces.ResponseError(w, http.StatusInternalServerError, subErr.Error(), "Internal error")
 		}
 
 		return
 	}
 
-	ResponseJson(w, http.StatusAccepted, sub)
+	slog.Info("Submission was created", slog.Int64("id", sub.ID))
+	responces.ResponseJson(w, http.StatusAccepted, sub)
 }
 
 func (h *SubmissionHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +60,8 @@ func (h *SubmissionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(strId, 10, 64)
 
 	if err != nil {
-		ResponseError(w, http.StatusBadRequest, err.Error(), "Bad request")
+		slog.Warn("Create submission failed : bad JSON format", slog.Any("err", err))
+		responces.ResponseError(w, http.StatusBadRequest, "Invalid JSON format", "Expected id field")
 		return
 	}
 
@@ -92,17 +74,21 @@ func (h *SubmissionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if subErr != nil {
 		switch {
 		case errors.Is(subErr, context.DeadlineExceeded):
-			ResponseError(w, http.StatusGatewayTimeout, subErr.Error(), "Deadline of submission_service was exceeded")
-		case errors.Is(subErr, pgx.ErrNoRows):
-			ResponseError(w, http.StatusNotFound, subErr.Error(), "Submission not found")
+			slog.Error("Get submission failed : deadline of responce from bd", slog.Any("err", subErr))
+			responces.ResponseError(w, http.StatusGatewayTimeout, "Internal server problem", "Try again later")
+		case errors.Is(subErr, service.ErrSubmissionNotFound):
+			slog.Warn("Get submission failed : submission not found", slog.Any("err", subErr))
+			responces.ResponseError(w, http.StatusNotFound, "Non-existed submission id", "Write correct id")
 		default:
-			ResponseError(w, http.StatusInternalServerError, subErr.Error(), "Internal error")
+			slog.Error("Get submission failed : bd error", slog.Any("err", subErr))
+			responces.ResponseError(w, http.StatusInternalServerError, "Internal server problem", "Try again later")
 		}
 
 		return
 
 	}
 
-	ResponseJson(w, http.StatusAccepted, sub)
+	slog.Info("Submission was acquiered", slog.Int64("id", id))
+	responces.ResponseJson(w, http.StatusAccepted, sub)
 
 }

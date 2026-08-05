@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"errors"
+	"judge-system/internal/responces"
 	"judge-system/internal/service"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -17,26 +19,38 @@ func NewTaskHandler(svr service.JudgeService) *TaskHandler {
 	return &TaskHandler{svr: svr}
 }
 
+type JudgeOutput struct {
+	Status string `json:"status"`
+	Id     int64  `json:"id"`
+}
+
 func (h *TaskHandler) Judge(w http.ResponseWriter, r *http.Request) {
 	strId := r.URL.Query().Get("id")
 	id, err := strconv.ParseInt(strId, 10, 64)
 
-	ResponseError(w, http.StatusBadRequest, err.Error(), "Judge error bad request")
+	if err != nil {
+		slog.Warn("Judge failed : bad JSON format", slog.Any("err", err))
+		responces.ResponseError(w, http.StatusBadRequest, "Invalid JSON format", "Expected id field")
+		return
+	}
 
 	ctxTimeout, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 
 	defer cancel()
 
-	judgeErr := h.svr.JudgeSubmission(ctxTimeout, id)
-
-	if judgeErr != nil {
+	if judgeErr := h.svr.JudgeSubmission(ctxTimeout, id); judgeErr != nil {
 		switch {
 		case errors.Is(judgeErr, context.DeadlineExceeded):
-			ResponseError(w, http.StatusGatewayTimeout, judgeErr.Error(), "DeadlineExceeded error at Judge")
+			slog.Error("Judge failed : deadline of responce from bd", slog.Any("err", judgeErr))
+			responces.ResponseError(w, http.StatusGatewayTimeout, "Internal server problem", "Try again later")
 		default:
-			ResponseError(w, http.StatusInternalServerError, judgeErr.Error(), "Internal error at Judge")
+			slog.Error("Judge failed : bd error", slog.Any("err", judgeErr))
+			responces.ResponseError(w, http.StatusInternalServerError, "Internal server problem", "Try again later")
 		}
+
+		return
 	}
 
-	ResponseJson(w, http.StatusAccepted, "OK")
+	slog.Info("Submission was judged succesfully", slog.Int64("id", id))
+	responces.ResponseJson(w, http.StatusAccepted, JudgeOutput{Status: "OK", Id: id})
 }
