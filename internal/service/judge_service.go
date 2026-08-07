@@ -2,24 +2,27 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"judge-system/internal/errs"
 	"judge-system/internal/models"
 	"judge-system/internal/runner"
+	"log/slog"
 	"strings"
 )
 
 type JudgeSubmissionRepository interface {
 	GetAllTestsIdForSubmission(ctx context.Context, id int64) ([]int64, error)
-	GetByID(ctx context.Context, id int64) (*models.Submission, error)
+	GetById(ctx context.Context, id int64) (*models.Submission, error)
 	SaveById(ctx context.Context, id int64, finalVerdict string, maxTime, maxMem int) error
 }
 
 type JudgeLanguageRepository interface {
-	GetByID(ctx context.Context, id int) (*models.Language, error)
+	GetById(ctx context.Context, id int) (*models.Language, error)
 }
 
 type JudgeTaskRepository interface {
-	GetByID(ctx context.Context, id int64) (*models.Task, error)
+	GetById(ctx context.Context, id int64) (*models.Task, error)
 }
 
 type JudgeTestRepository interface {
@@ -41,34 +44,63 @@ type judgeService struct {
 func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) error {
 
 	if id < 0 {
-		return ErrInvalidInput
+		return errs.ErrInvalidInput
 	}
 
 	testCasesId, err := s.subRepo.GetAllTestsIdForSubmission(ctx, id)
 	if err != nil {
+		if errors.Is(err, errs.ErrSubmissionNotFound) {
+			return errs.ErrNotFound
+		}
+
 		return err
 	}
+
+	if len(testCasesId) == 0 {
+		slog.Warn("judge submission failes", slog.Any("err", errs.ErrEmptySlice))
+		return errs.ErrEmptySlice
+	}
+
+	slog.Info("Дошли до get all tests by id slice", "slice", testCasesId)
 
 	testCases, err := s.testRepo.GetAllTestsByIdSlice(ctx, testCasesId)
 	if err != nil {
+		if errors.Is(err, errs.ErrTestNotFound) {
+			return errs.ErrNotFound
+		}
+
 		return err
 	}
 
-	sub, err := s.subRepo.GetByID(ctx, id)
+	slog.Info("Дошли до sub get", "slice", testCases)
+
+	sub, err := s.subRepo.GetById(ctx, id)
 	if err != nil {
+		if errors.Is(err, errs.ErrSubmissionNotFound) {
+			return errs.ErrNotFound
+		}
+
 		return err
 	}
 
 	code := sub.Code
 
-	task, err := s.taskRepo.GetByID(ctx, sub.TaskID)
+	task, err := s.taskRepo.GetById(ctx, sub.TaskID)
 	if err != nil {
+		if errors.Is(err, errs.ErrTaskNotFound) {
+			return errs.ErrNotFound
+		}
+
 		return err
 	}
 
 	language_id := sub.LanguageID
-	language, err := s.langRepo.GetByID(ctx, language_id)
+	language, err := s.langRepo.GetById(ctx, language_id)
 	if err != nil {
+		if errors.Is(err, errs.ErrLanguageNotFound) {
+			return errs.ErrNotFound
+		}
+
 		return err
 	}
 
@@ -119,10 +151,11 @@ func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) error {
 
 }
 
-func NewJudgeService(subRepo JudgeSubmissionRepository, langRepo JudgeLanguageRepository, taskRepo JudgeTaskRepository, runnerManager *runner.RunnerManager) JudgeService {
+func NewJudgeService(subRepo JudgeSubmissionRepository, langRepo JudgeLanguageRepository, taskRepo JudgeTaskRepository, testRepo JudgeTestRepository, runnerManager *runner.RunnerManager) JudgeService {
 	return &judgeService{
 		subRepo:       subRepo,
 		langRepo:      langRepo,
 		taskRepo:      taskRepo,
+		testRepo:      testRepo,
 		runnerManager: runnerManager}
 }

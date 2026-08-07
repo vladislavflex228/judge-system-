@@ -3,15 +3,11 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
-
-	"github.com/jackc/pgx/v5"
+	"judge-system/internal/errs"
 )
 
-var ErrNotFound = errors.New("resource not found")
-
 type LoginUserRepository interface {
-	CredentialsByEmail(ctx context.Context, email string) (int64, string, error)
+	GetCredentialsByEmail(ctx context.Context, email string) (int64, string, error)
 }
 
 type LoginService interface {
@@ -22,22 +18,20 @@ type loginService struct {
 	repo LoginUserRepository
 }
 
-func (s *loginService) GetPassword(ctx context.Context, email string) (int64, string, error) {
-	if email == "" {
-		return 0, "", fmt.Errorf("Empty email")
-	}
-
-	id, hash_password, err := s.repo.CredentialsByEmail(ctx, email)
+func (s *loginService) GetCredentialsByEmail(ctx context.Context, email string) (int64, string, error) {
+	id, hash_password, err := s.repo.GetCredentialsByEmail(ctx, email)
 	if err != nil {
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-			return 0, "", ErrNotFound
-		default:
-			return 0, "", err
+		if errors.Is(err, errs.ErrUserNotFound) {
+			return 0, "", errs.ErrNotFound
 
 		}
+		return 0, "", err
 	}
 
 	return id, hash_password, nil
 
+}
+
+func NewLoginService(repo LoginUserRepository) LoginService {
+	return &loginService{repo: repo}
 }

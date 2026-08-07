@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"judge-system/internal/errs"
 	"judge-system/internal/responces"
 	"judge-system/internal/service"
 	"log/slog"
@@ -43,6 +44,9 @@ func (h *TaskHandler) Judge(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(judgeErr, context.DeadlineExceeded):
 			slog.Error("Judge failed : deadline of responce from bd", slog.Any("err", judgeErr))
 			responces.ResponseError(w, http.StatusGatewayTimeout, "Internal server problem", "Try again later")
+		case errors.Is(judgeErr, errs.ErrNotFound):
+			slog.Error("Judge failed : task not found", slog.Any("err", judgeErr))
+			responces.ResponseError(w, http.StatusNotFound, "Non-existed submission id", "Write correct id")
 		default:
 			slog.Error("Judge failed : bd error", slog.Any("err", judgeErr))
 			responces.ResponseError(w, http.StatusInternalServerError, "Internal server problem", "Try again later")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"judge-system/internal/auth"
+	"judge-system/internal/errs"
 	"judge-system/internal/responces"
 	"judge-system/internal/service"
 	"log/slog"
@@ -55,7 +56,10 @@ func (l *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrNotFound):
+		case errors.Is(err, context.DeadlineExceeded):
+			slog.Error("Login failed : deadline of responce from bd", slog.Any("err", err))
+			responces.ResponseError(w, http.StatusGatewayTimeout, "Internal server problem", "Try again later")
+		case errors.Is(err, errs.ErrNotFound):
 			slog.Warn("Login failed:email not found", slog.String("email", in.Email))
 			responces.ResponseError(w, http.StatusUnauthorized, "Invalid credentials", "Wrong password or credentials") //Защита от хакера : вернуть статус 401 вместо 404
 			return
@@ -76,6 +80,7 @@ func (l *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("Failed to generate JWT token", slog.Int64("user_id", id), slog.Any("err", err))
 		responces.ResponseError(w, http.StatusInternalServerError, "Internal error", "Generating token error")
+		return
 	}
 
 	slog.Info("User logged in successfully", slog.Int64("user_id", id), slog.String("email", in.Email))

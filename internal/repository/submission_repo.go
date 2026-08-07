@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"judge-system/internal/errs"
 	"judge-system/internal/models"
-	"judge-system/internal/service"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,7 +34,7 @@ func (s *SubmissionRepository) Create(ctx context.Context, submission *models.Su
 		submission.MemoryUsed).Scan(&submission.ID, &submission.CreatedAt)
 
 	if err != nil {
-		return fmt.Errorf("create submission_repo error: %w", err)
+		return fmt.Errorf("submission repository : create : %w", err)
 	}
 
 	return nil
@@ -45,7 +45,7 @@ func (s *SubmissionRepository) GetById(ctx context.Context, id int64) (*models.S
 			  FROM submissions
 			  WHERE id = $1`
 
-	submission := &models.Submission{}
+	var submission models.Submission
 
 	err := s.db.QueryRow(ctx, query, id).Scan(
 		&submission.ID,
@@ -55,16 +55,17 @@ func (s *SubmissionRepository) GetById(ctx context.Context, id int64) (*models.S
 		&submission.Code,
 		&submission.Status,
 		&submission.ExecutionTime,
-		&submission.MemoryUsed)
+		&submission.MemoryUsed,
+		&submission.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, service.ErrSubmissionNotFound
+			return nil, errs.ErrSubmissionNotFound
 		}
-		return nil, fmt.Errorf("getbyid submission_repo error : %w", err)
+		return nil, fmt.Errorf("submission repository : get by id : %w", err)
 	}
 
-	return submission, nil
+	return &submission, nil
 }
 
 func (s *SubmissionRepository) GetAllSubmissionsByTaskID(ctx context.Context, task_id int64) ([]models.Submission, error) {
@@ -76,15 +77,18 @@ func (s *SubmissionRepository) GetAllSubmissionsByTaskID(ctx context.Context, ta
 	row_cursor, err := s.db.Query(ctx, query, task_id)
 
 	if err != nil {
-		return nil, fmt.Errorf("query error at func GetAllSubmissionsByTaskID : %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errs.ErrTaskNotFound
+		}
+		return nil, fmt.Errorf("submission repository : get all subs by task id : %w", err)
 	}
 
 	defer row_cursor.Close() //row_cursor - сетевой курсор , подключенный к базе данных , требует отключения
 
-	submissions := []models.Submission{}
+	submissions := make([]models.Submission, 0)
 
 	for row_cursor.Next() {
-		submission := models.Submission{}
+		var submission models.Submission
 
 		err := row_cursor.Scan(
 			&submission.ID,
@@ -94,13 +98,18 @@ func (s *SubmissionRepository) GetAllSubmissionsByTaskID(ctx context.Context, ta
 			&submission.Code,
 			&submission.Status,
 			&submission.ExecutionTime,
-			&submission.MemoryUsed)
+			&submission.MemoryUsed,
+			&submission.CreatedAt)
 
 		if err != nil {
-			return nil, fmt.Errorf("scan error at func GetAllSubmissionsByTaskID : %w ", err)
+			return nil, fmt.Errorf("submission repository : get all subs by task id : %w", err)
 		}
 
 		submissions = append(submissions, submission)
+	}
+
+	if err := row_cursor.Err(); err != nil {
+		return nil, fmt.Errorf("submission repository : get all subs by task id (cursor) : %w", err)
 	}
 
 	return submissions, nil
@@ -115,15 +124,18 @@ func (s *SubmissionRepository) GetAllSubmissionsByUserID(ctx context.Context, us
 	row_cursor, err := s.db.Query(ctx, query, user_id)
 
 	if err != nil {
-		return nil, fmt.Errorf("query error at func GetAllSubmissionsByUserID : %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errs.ErrUserNotFound
+		}
+		return nil, fmt.Errorf("submission repository : get all subs by user id : %w", err)
 	}
 
 	defer row_cursor.Close() //row_cursor - сетевой курсор , подключенный к базе данных , требует отключения
 
-	submissions := []models.Submission{}
+	submissions := make([]models.Submission, 0)
 
 	for row_cursor.Next() {
-		submission := models.Submission{}
+		var submission models.Submission
 
 		err := row_cursor.Scan(
 			&submission.ID,
@@ -133,13 +145,18 @@ func (s *SubmissionRepository) GetAllSubmissionsByUserID(ctx context.Context, us
 			&submission.Code,
 			&submission.Status,
 			&submission.ExecutionTime,
-			&submission.MemoryUsed)
+			&submission.MemoryUsed,
+			&submission.CreatedAt)
 
 		if err != nil {
-			return nil, fmt.Errorf("scan error at func GetAllSubmissionsByUserID : %w ", err)
+			return nil, fmt.Errorf("submission repository : get all subs by user id : %w", err)
 		}
 
 		submissions = append(submissions, submission)
+	}
+
+	if err := row_cursor.Err(); err != nil {
+		return nil, fmt.Errorf("submission repository : get all subs by user id (cursor) : %w", err)
 	}
 
 	return submissions, nil
@@ -156,7 +173,10 @@ func (s *SubmissionRepository) GetAllTestsIdForSubmission(ctx context.Context, i
 	row_cursor, err := s.db.Query(ctx, query, id)
 
 	if err != nil {
-		return nil, fmt.Errorf("error at func Getalltestsbysub : %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errs.ErrSubmissionNotFound
+		}
+		return nil, err
 	}
 
 	defer row_cursor.Close()
@@ -167,9 +187,13 @@ func (s *SubmissionRepository) GetAllTestsIdForSubmission(ctx context.Context, i
 		var test_id int64
 		err := row_cursor.Scan(&test_id)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("submission repository : get all tests id by sub id : %w", err)
 		}
 		testCasesId = append(testCasesId, test_id)
+	}
+
+	if err := row_cursor.Err(); err != nil {
+		return nil, fmt.Errorf("submission repository : get all tests id by sub id (cursor) : %w", err)
 	}
 
 	return testCasesId, nil
@@ -184,6 +208,9 @@ func (s *SubmissionRepository) SaveById(ctx context.Context, id int64, finalVerd
 	_, err := s.db.Exec(ctx, query, finalVerdict, maxTime, maxMem, id) // Если мы не делаем SELECT и RETURNING , используем Exec
 
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errs.ErrSubmissionNotFound
+		}
 		return err
 	}
 

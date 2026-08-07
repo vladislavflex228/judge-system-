@@ -33,7 +33,7 @@ func AuthorizationMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		jwtKey := os.Getenv("JWT_KEY")
+		jwtKey := os.Getenv("JWT_SECRET")
 
 		claims := &auth.CustomClaims{}
 
@@ -42,11 +42,12 @@ func AuthorizationMiddleware(next http.Handler) http.Handler {
 				return nil, jwt.ErrSignatureInvalid
 			}
 
-			return jwtKey, nil
+			return []byte(jwtKey), nil
 		})
 
 		if err != nil || !token.Valid {
 			responces.ResponseError(w, http.StatusUnauthorized, fmt.Errorf("Invalid or expired token").Error(), "")
+			return
 		}
 
 		ctx := context.WithValue(r.Context(), UserIDKey, claims.UserId)

@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"judge-system/internal/errs"
 	"judge-system/internal/models"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -28,7 +31,7 @@ func (t *TaskRepository) Create(ctx context.Context, task *models.Task) error {
 		task.MemoryLimit).Scan(&task.ID, &task.CreatedAt)
 
 	if err != nil {
-		return fmt.Errorf("create task_repo error: %w", err)
+		return fmt.Errorf("task repository : create : %w", err)
 	}
 
 	return nil
@@ -39,7 +42,7 @@ func (t *TaskRepository) GetById(ctx context.Context, id int64) (*models.Task, e
 			  FROM tasks
 			  WHERE id = $1`
 
-	task := &models.Task{}
+	var task models.Task
 
 	err := t.db.QueryRow(ctx, query, id).Scan(
 		&task.ID,
@@ -50,8 +53,11 @@ func (t *TaskRepository) GetById(ctx context.Context, id int64) (*models.Task, e
 		&task.CreatedAt)
 
 	if err != nil {
-		return nil, fmt.Errorf("getbyid user_repo error : %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errs.ErrTaskNotFound
+		}
+		return nil, fmt.Errorf("task repository : get by id : %w", err)
 	}
 
-	return task, nil
+	return &task, nil
 }

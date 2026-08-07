@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"judge-system/internal/errs"
 	"judge-system/internal/responces"
 	"judge-system/internal/service"
 	"log/slog"
@@ -69,14 +70,14 @@ func (h *SubmissionHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	defer cancel()
 
-	sub, subErr := h.svr.GetSubmissionByID(ctx, id)
+	sub, subErr := h.svr.GetSubmissionById(ctx, id)
 
 	if subErr != nil {
 		switch {
 		case errors.Is(subErr, context.DeadlineExceeded):
 			slog.Error("Get submission failed : deadline of responce from bd", slog.Any("err", subErr))
 			responces.ResponseError(w, http.StatusGatewayTimeout, "Internal server problem", "Try again later")
-		case errors.Is(subErr, service.ErrSubmissionNotFound):
+		case errors.Is(subErr, errs.ErrNotFound):
 			slog.Warn("Get submission failed : submission not found", slog.Any("err", subErr))
 			responces.ResponseError(w, http.StatusNotFound, "Non-existed submission id", "Write correct id")
 		default:

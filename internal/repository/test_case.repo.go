@@ -2,10 +2,14 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"judge-system/internal/errs"
 	"judge-system/internal/models"
 )
 
@@ -25,7 +29,7 @@ func (t *TestRepository) Create(ctx context.Context, test *models.TestCase) erro
 	err := t.db.QueryRow(ctx, query, test.TaskID, test.Title, test.Description, test.InputData, test.OutputData, test.IsHidden).Scan(&test.ID, &test.CreatedAt)
 
 	if err != nil {
-		return fmt.Errorf("create test_case_repo error : %w", err)
+		return fmt.Errorf("test_case repository : create : %w", err)
 	}
 
 	return nil
@@ -36,7 +40,7 @@ func (t *TestRepository) GetById(ctx context.Context, id int64) (*models.TestCas
 	query := `SELECT id,task_id,title,description,input_data,output_data,is_hidden,created_at
 			  FROM test_cases
 			  WHERE id = $1`
-	test := &models.TestCase{}
+	var test models.TestCase
 
 	err := t.db.QueryRow(ctx, query, id).Scan(
 		&test.ID,
@@ -48,10 +52,12 @@ func (t *TestRepository) GetById(ctx context.Context, id int64) (*models.TestCas
 		&test.IsHidden)
 
 	if err != nil {
-		return nil, fmt.Errorf("GetById test_case_repo error: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errs.ErrTestNotFound
+		}
+		return nil, fmt.Errorf("test_case repository : get by id : %w", err)
 	}
-
-	return test, nil
+	return &test, nil
 }
 
 func (t *TestRepository) GetAllTestsByTaskID(ctx context.Context, task_id int64) ([]models.TestCase, error) {
@@ -63,15 +69,18 @@ func (t *TestRepository) GetAllTestsByTaskID(ctx context.Context, task_id int64)
 	row_cursor, err := t.db.Query(ctx, query, task_id)
 
 	if err != nil {
-		return nil, fmt.Errorf("query error at func GetAllTestsByTaskID : %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errs.ErrTestNotFound
+		}
+		return nil, fmt.Errorf("test_case repository : get all tests by task id : %w", err)
 	}
 
 	defer row_cursor.Close() //row_cursor - сетевой курсор , подключенный к базе данных , требует отключения
 
-	tests := []models.TestCase{}
+	tests := make([]models.TestCase, 0)
 
 	for row_cursor.Next() {
-		test := models.TestCase{}
+		var test models.TestCase
 
 		err := row_cursor.Scan(
 			&test.ID,
@@ -80,13 +89,18 @@ func (t *TestRepository) GetAllTestsByTaskID(ctx context.Context, task_id int64)
 			&test.Description,
 			&test.InputData,
 			&test.OutputData,
-			&test.IsHidden)
+			&test.IsHidden,
+			&test.CreatedAt)
 
 		if err != nil {
-			return nil, fmt.Errorf("scan error at func GetAllTestsByTaskID : %w ", err)
+			return nil, fmt.Errorf("test_case repository : get all tests by task id : %w", err)
 		}
 
 		tests = append(tests, test)
+	}
+
+	if err := row_cursor.Err(); err != nil {
+		return nil, fmt.Errorf("test_case repository : get all tests by task id (cursor): %w", err)
 	}
 
 	return tests, nil
@@ -102,15 +116,17 @@ func (t *TestRepository) GetAllTestsByIdSlice(ctx context.Context, testsId []int
 	row_cursor, err := t.db.Query(ctx, query, testsId)
 
 	if err != nil {
-		return nil, fmt.Errorf("error at Getalltestsbyidslice : %w", err)
+		return nil, fmt.Errorf("test_case repository : get all tests by id slice : %w", err)
 	}
+
+	slog.Info("Тут")
 
 	defer row_cursor.Close()
 
-	testCases := []models.TestCase{}
+	testCases := make([]models.TestCase, 0)
 
 	for row_cursor.Next() {
-		test := &models.TestCase{}
+		var test models.TestCase
 
 		err := row_cursor.Scan(
 			&test.ID,
@@ -119,13 +135,18 @@ func (t *TestRepository) GetAllTestsByIdSlice(ctx context.Context, testsId []int
 			&test.Description,
 			&test.InputData,
 			&test.OutputData,
-			&test.IsHidden)
+			&test.IsHidden,
+			&test.CreatedAt)
 
 		if err != nil {
-			return nil, fmt.Errorf("scan error at Getalltestsbyidslice : %w", err)
+			return nil, fmt.Errorf("test_case repository : get all tests by id slice : %w", err)
 		}
 
-		testCases = append(testCases, *test)
+		testCases = append(testCases, test)
+	}
+
+	if err := row_cursor.Err(); err != nil {
+		return nil, fmt.Errorf("test_case repository : get all tests by id slice(cursor) : %w", err)
 	}
 
 	return testCases, nil

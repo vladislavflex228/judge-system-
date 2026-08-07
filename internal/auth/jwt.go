@@ -16,7 +16,7 @@ func GenerateToken(user_id int64) (string, error) {
 	claims := &CustomClaims{
 		UserId: user_id,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(40 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
@@ -25,5 +25,5 @@ func GenerateToken(user_id int64) (string, error) {
 
 	jwtKey := os.Getenv("JWT_SECRET")
 
-	return token.SignedString(jwtKey)
+	return token.SignedString([]byte(jwtKey))
 }
