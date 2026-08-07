@@ -11,7 +11,7 @@ import (
 type goRunner struct{}
 
 func NewGoRunner() LanguageRunner {
-	return &cppRunner{}
+	return &goRunner{}
 }
 
 func (r *goRunner) Compile(ctx context.Context, source_code string) (string, error) {
@@ -25,14 +25,14 @@ func (r *goRunner) Compile(ctx context.Context, source_code string) (string, err
 	binPath := filepath.Join(tmpDir, "solution")
 
 	if err := os.WriteFile(sourcePath, []byte(source_code), 0644); err != nil {
-		return "", nil
+		return "", err
 	}
 
-	cmd := exec.CommandContext(ctx, "go build", "-o", binPath, sourcePath)
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", binPath, sourcePath)
 
-	if out, err := cmd.Output(); err != nil {
+	if _, err := cmd.Output(); err != nil {
 		os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("Error with compilation %s", string(out))
+		return "", fmt.Errorf("Error with compilation %s", err.Error())
 	}
 
 	return binPath, nil

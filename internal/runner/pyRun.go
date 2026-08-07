@@ -9,7 +9,7 @@ import (
 type pyRunner struct{}
 
 func NewPyRunner() LanguageRunner {
-	return &cppRunner{}
+	return &pyRunner{}
 }
 
 func (r *pyRunner) Compile(ctx context.Context, source_code string) (string, error) {
@@ -30,4 +30,8 @@ func (r *pyRunner) Compile(ctx context.Context, source_code string) (string, err
 
 func (r *pyRunner) Run(ctx context.Context, execPath, inputData string, time_limit, memory_limit, boxID int) (*TaskResult, error) {
 	return RunIsolation(ctx, execPath, inputData, time_limit, memory_limit, boxID, []string{"/usr/bin/python3", "solution.py"})
+}
+
+func (r *pyRunner) CleanUp(execPath string) {
+	os.RemoveAll(filepath.Dir(execPath))
 }

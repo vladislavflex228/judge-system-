@@ -110,6 +110,8 @@ func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) error {
 		return fmt.Errorf("unsupported language %s", language.Slug)
 	}
 
+	slog.Info("Language", "slug", language.Slug)
+
 	path, err := langRunner.Compile(ctx, code)
 
 	if err != nil {
