@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"judge-system/internal/config"
+	baseConfig "judge-system/internal/config"
 	"judge-system/internal/database"
 	"judge-system/internal/handler"
+	judgeConfig "judge-system/internal/judge/config"
+	"judge-system/internal/judge/runner"
 	"judge-system/internal/middleware"
 	"judge-system/internal/repository"
-	"judge-system/internal/runner"
 	"judge-system/internal/service"
 	"log/slog"
 	"net/http"
@@ -17,7 +18,7 @@ import (
 )
 
 func main() {
-	conf, err := config.LoadConfig()
+	conf, err := baseConfig.LoadConfig()
 	if err != nil {
 		slog.Error("load config failed", slog.Any("err", err))
 		return
@@ -55,18 +56,15 @@ func main() {
 	subService := service.NewSubmissionService(subRepo, taskRepo)
 	subHandler := handler.NewSubmissionHandler(subService)
 
-	cppRunner := runner.NewCppRunner()
-	goRunner := runner.NewGoRunner()
-	pyRunner := runner.NewPyRunner()
+	confBuilder := judgeConfig.NewConfigBuilder("/sandbox")
+	runner, err := runner.NewDockerRunner(confBuilder)
 
-	runners := make(map[string]runner.LanguageRunner)
-	runners["cpp"] = cppRunner
-	runners["go"] = goRunner
-	runners["python"] = pyRunner
+	if err != nil {
+		slog.Error("failed to init dock runner", slog.Any("error", err))
+		return
+	}
 
-	manager := runner.NewRunnerManager(runners)
-
-	judgeService := service.NewJudgeService(subRepo, langRepo, taskRepo, testRepo, manager)
+	judgeService := service.NewJudgeService(subRepo, langRepo, taskRepo, testRepo, runner)
 	judgeHandler := handler.NewTaskHandler(judgeService)
 
 	r.Group(func(r chi.Router) {

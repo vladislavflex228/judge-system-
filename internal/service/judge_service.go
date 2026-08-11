@@ -5,8 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"judge-system/internal/errs"
+	"judge-system/internal/judge/config"
+	"judge-system/internal/judge/domain"
 	"judge-system/internal/models"
-	"judge-system/internal/runner"
 	"log/slog"
 	"strings"
 )
@@ -34,11 +35,11 @@ type JudgeService interface {
 }
 
 type judgeService struct {
-	subRepo       JudgeSubmissionRepository
-	langRepo      JudgeLanguageRepository
-	taskRepo      JudgeTaskRepository
-	testRepo      JudgeTestRepository
-	runnerManager *runner.RunnerManager
+	subRepo  JudgeSubmissionRepository
+	langRepo JudgeLanguageRepository
+	taskRepo JudgeTaskRepository
+	testRepo JudgeTestRepository
+	runner   domain.CodeRunner
 }
 
 func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) error {
@@ -46,33 +47,6 @@ func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) error {
 	if id < 0 {
 		return errs.ErrInvalidInput
 	}
-
-	testCasesId, err := s.subRepo.GetAllTestsIdForSubmission(ctx, id)
-	if err != nil {
-		if errors.Is(err, errs.ErrSubmissionNotFound) {
-			return errs.ErrNotFound
-		}
-
-		return err
-	}
-
-	if len(testCasesId) == 0 {
-		slog.Warn("judge submission failes", slog.Any("err", errs.ErrEmptySlice))
-		return errs.ErrEmptySlice
-	}
-
-	slog.Info("Дошли до get all tests by id slice", "slice", testCasesId)
-
-	testCases, err := s.testRepo.GetAllTestsByIdSlice(ctx, testCasesId)
-	if err != nil {
-		if errors.Is(err, errs.ErrTestNotFound) {
-			return errs.ErrNotFound
-		}
-
-		return err
-	}
-
-	slog.Info("Дошли до sub get", "slice", testCases)
 
 	sub, err := s.subRepo.GetById(ctx, id)
 	if err != nil {
@@ -94,8 +68,7 @@ func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) error {
 		return err
 	}
 
-	language_id := sub.LanguageID
-	language, err := s.langRepo.GetById(ctx, language_id)
+	lang, err := s.langRepo.GetById(ctx, sub.LanguageID)
 	if err != nil {
 		if errors.Is(err, errs.ErrLanguageNotFound) {
 			return errs.ErrNotFound
@@ -104,60 +77,91 @@ func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) error {
 		return err
 	}
 
-	langRunner, ok := s.runnerManager.Runners[language.Slug]
+	langConfig, ok := config.Registry[lang.Slug]
 
 	if !ok {
-		return fmt.Errorf("unsupported language %s", language.Slug)
+		return fmt.Errorf("Undefined Language")
 	}
 
-	slog.Info("Language", "slug", language.Slug)
-
-	path, err := langRunner.Compile(ctx, code)
-
+	testCasesId, err := s.subRepo.GetAllTestsIdForSubmission(ctx, id)
 	if err != nil {
-		return fmt.Errorf("Submission id : %d , compilation error : %w", id, err)
+		if errors.Is(err, errs.ErrSubmissionNotFound) {
+			return errs.ErrNotFound
+		}
+
+		return err
 	}
 
-	defer langRunner.CleanUp(path)
+	if len(testCasesId) == 0 {
+		slog.Warn("judge submission failed", slog.Any("err", errs.ErrEmptySlice))
+		return errs.ErrEmptySlice
+	}
 
-	boxID := 0
-	var maxTime int
-	var maxMem int
-	finalVerdict := "OK"
+	testCases, err := s.testRepo.GetAllTestsByIdSlice(ctx, testCasesId)
+	if err != nil {
+		if errors.Is(err, errs.ErrTestNotFound) {
+			return errs.ErrNotFound
+		}
+
+		return err
+	}
+
+	compileExeRes, err := s.runner.Compile(ctx, langConfig, code)
+
+	var maxTime, maxMem = 0, 0
+
+	if err != nil || compileExeRes == nil || compileExeRes.ExitCode != 0 {
+		return s.subRepo.SaveById(ctx, id, "CE", maxTime, maxMem)
+	}
 
 	for _, test := range testCases {
-		res, err := langRunner.Run(ctx, path, test.InputData, task.TimeLimit, task.MemoryLimit, boxID)
-		boxID++
+		runExeRes, err := s.runner.RunTest(
+			ctx,
+			langConfig,
+			test.InputData,
+			compileExeRes.Binary,
+			float64(task.TimeLimit)/1000,
+			int64(task.MemoryLimit),
+		)
 
 		if err != nil {
-			finalVerdict = "SE"
-			break
+			slog.Error("Runtime system err", slog.Any("error", err))
+			return s.subRepo.SaveById(ctx, id, "SE", maxTime, maxMem)
 		}
 
-		maxTime = max(res.TimeUsed, task.TimeLimit)
-		maxMem = max(res.MemoryUsed, task.MemoryLimit)
+		maxTime = max(maxTime, int(runExeRes.Duration))
+		maxMem = max(maxMem, int(runExeRes.MemoryUsed))
 
-		if res.Verdict != "OK" {
-			finalVerdict = res.Verdict
-			break
-		}
+		if runExeRes.TLE {
+			return s.subRepo.SaveById(ctx, id, "TLE", maxTime, maxMem)
 
-		if strings.TrimSpace(res.Stdout) != strings.TrimSpace(test.OutputData) {
-			finalVerdict = "WA"
-			break
+		} else if runExeRes.MLE {
+			return s.subRepo.SaveById(ctx, id, "MLE", maxTime, maxMem)
+
+		} else if runExeRes.ExitCode != 0 {
+			return s.subRepo.SaveById(ctx, id, "RE", maxTime, maxMem)
+
+		} else if strings.TrimSpace(test.OutputData) != strings.TrimSpace(runExeRes.Stdout) {
+			return s.subRepo.SaveById(ctx, id, "WA", maxTime, maxMem)
 		}
 
 	}
 
-	return s.subRepo.SaveById(ctx, id, finalVerdict, maxTime, maxMem)
+	return s.subRepo.SaveById(ctx, id, "OK", maxTime, maxMem)
 
 }
 
-func NewJudgeService(subRepo JudgeSubmissionRepository, langRepo JudgeLanguageRepository, taskRepo JudgeTaskRepository, testRepo JudgeTestRepository, runnerManager *runner.RunnerManager) JudgeService {
+func NewJudgeService(
+	subRepo JudgeSubmissionRepository,
+	langRepo JudgeLanguageRepository,
+	taskRepo JudgeTaskRepository,
+	testRepo JudgeTestRepository,
+	runner domain.CodeRunner) JudgeService {
+
 	return &judgeService{
-		subRepo:       subRepo,
-		langRepo:      langRepo,
-		taskRepo:      taskRepo,
-		testRepo:      testRepo,
-		runnerManager: runnerManager}
+		subRepo:  subRepo,
+		langRepo: langRepo,
+		taskRepo: taskRepo,
+		testRepo: testRepo,
+		runner:   runner}
 }
