@@ -15,10 +15,10 @@ import (
 
 type MemoryStats struct {
 	Usage    uint64 `json:"usage"`
-	MaxUsage uint64 `json:"max_usage"` // Пиковое потребление памяти (Cgroups v1)
+	MaxUsage uint64 `json:"max_usage"`
 	Stats    struct {
-		Peak     uint64 `json:"peak"` // Пиковое потребление в Cgroups v2
-		Anon     uint64 `json:"anon"` // Анонимная память (без cache/buffers)
+		Peak     uint64 `json:"peak"`
+		Anon     uint64 `json:"anon"`
 		Inactive uint64 `json:"inactive_file"`
 	} `json:"stats"`
 }
@@ -28,7 +28,6 @@ type ContainerStatsResponse struct {
 }
 
 func (r *DockerRunner) GetMemoryUsage(ctx context.Context, containerID string) (uint64, error) {
-	// Запрашиваем однократную статистику контейнера
 	stats, err := r.cli.ContainerStats(ctx, containerID, client.ContainerStatsOptions{})
 	if err != nil {
 		return 0, fmt.Errorf("failed to get stats: %w", err)
@@ -40,29 +39,25 @@ func (r *DockerRunner) GetMemoryUsage(ctx context.Context, containerID string) (
 		return 0, fmt.Errorf("failed to decode stats json: %w", err)
 	}
 
-	// В зависимости от версии Cgroups на сервере (v1 или v2)
 	maxMemory := statsJSON.MemoryStats.MaxUsage
 	if maxMemory == 0 {
 		maxMemory = statsJSON.MemoryStats.Stats.Peak
 	}
 
-	// Для более точной оценки вычитаем кеш файловой системы, оставляя чистый RSS
 	cleanMemory := maxMemory - statsJSON.MemoryStats.Stats.Inactive
 
 	return cleanMemory, nil
 }
 
-// createTarArchive упаковывает строку с кодом в tar-архив в оперативной памяти
 func createTarArchive(filename string, content []byte) (io.Reader, error) {
 	var buf bytes.Buffer
 	tarWriter := tar.NewWriter(&buf)
 
-	// Создаем заголовок файла для tar-архива
 	header := &tar.Header{
-		Name:    filename,            // Имя файла (например, "solution.cpp")
-		Size:    int64(len(content)), // Размер файла
-		Mode:    0644,                // Права доступа (чтение/запись для владельца, чтение для остальных)
-		ModTime: time.Now(),          // Время модификации
+		Name:    filename,
+		Size:    int64(len(content)),
+		Mode:    0644,
+		ModTime: time.Now(),
 	}
 
 	if err := tarWriter.WriteHeader(header); err != nil {
@@ -79,6 +74,59 @@ func createTarArchive(filename string, content []byte) (io.Reader, error) {
 	return &buf, nil
 }
 
+func createTarArchiveForRun(bin_file_name string, input_content, bin_content []byte) (io.Reader, error) {
+	var buf bytes.Buffer
+
+	tarWriter := tar.NewWriter(&buf)
+
+	header := &tar.Header{
+		Name:    bin_file_name,
+		Size:    int64(len(bin_content)),
+		Mode:    0755,
+		ModTime: time.Now(),
+	}
+
+	err := tarWriter.WriteHeader(header)
+
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tarWriter.Write(bin_content)
+
+	if err != nil {
+		return nil, err
+	}
+
+	input_header := &tar.Header{
+		Name:    "input.txt",
+		Size:    int64(len(input_content)),
+		Mode:    0644,
+		ModTime: time.Now(),
+	}
+
+	err = tarWriter.WriteHeader(input_header)
+
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tarWriter.Write(input_content)
+
+	if err != nil {
+		return nil, err
+	}
+
+	err = tarWriter.Close()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &buf, nil
+
+}
+
 func (r *DockerRunner) ExtractBinary(ctx context.Context, container_id string, binaryPath string) ([]byte, error) {
 	copyRes, err := r.cli.CopyFromContainer(ctx, container_id, client.CopyFromContainerOptions{SourcePath: binaryPath})
 
@@ -91,7 +139,7 @@ func (r *DockerRunner) ExtractBinary(ctx context.Context, container_id string, b
 	tarReader := tar.NewReader(copyRes.Content)
 
 	for {
-		header, err := tarReader.Next()
+		header, err := tarReader.Next() //tarReader передвигает курсор для чтения на 512 байт(перепрыгивает чере заголовок)
 		if errors.Is(err, io.EOF) {
 			break
 		}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"judge-system/internal/judge/config"
 	"judge-system/internal/judge/domain"
 	"log/slog"
@@ -41,34 +42,41 @@ func (r *DockerRunner) Compile(ctx context.Context, lang config.LanguageConfig, 
 		return nil, fmt.Errorf("failed to create compile container :%w", err)
 	}
 
-	defer r.cli.ContainerRemove(context.Background(), resp.ID, client.ContainerRemoveOptions{Force: true})
-
+	defer r.cli.ContainerRemove(context.Background(), resp.ID, client.ContainerRemoveOptions{Force: true}) //принудительное удаление контейнера(без остановки).Без флага может быть ошибка,если контейнер еще работает
+	//
 	tarReader, err := createTarArchive(lang.SourceFile, []byte(code))
 
-	_, err = r.cli.CopyToContainer(ctx, resp.ID, client.CopyToContainerOptions{
-		DestinationPath: r.confBuilder.WorkDir,
-		Content:         tarReader,
-	})
-
+	attach, err := r.cli.ContainerAttach(ctx, resp.ID, client.ContainerAttachOptions{Stream: true, Stdin: true})
 	if err != nil {
-		return nil, fmt.Errorf("failed to copy content to container :%w", err)
+		return nil, fmt.Errorf("ошибка attach: %w", err)
 	}
 
+	go func() {
+		defer attach.Close()
+		_, _ = io.Copy(attach.Conn, tarReader)
+		attach.CloseWrite()
+	}()
+	//
 	startTime := time.Now()
 	if _, err := r.cli.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to start container :%w", err)
 	}
 
 	var exitCode int
-	waitRes := r.cli.ContainerWait(ctx, resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
-	duration := time.Since(startTime)
+	execCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 
+	waitRes := r.cli.ContainerWait(execCtx, resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 	select {
 	case st := <-waitRes.Result:
 		exitCode = int(st.StatusCode)
 	case err := <-waitRes.Error:
 		return nil, fmt.Errorf("compile wait error: %w", err)
 	}
+
+	slog.Info("check", slog.Int("exitcode", exitCode))
+
+	duration := time.Since(startTime)
 
 	logsResp, err := r.cli.ContainerLogs(ctx, resp.ID, client.ContainerLogsOptions{
 		ShowStdout: true,
@@ -87,7 +95,7 @@ func (r *DockerRunner) Compile(ctx context.Context, lang config.LanguageConfig, 
 	var binaryBytes []byte
 
 	if exitCode == 0 && lang.BinaryFile != "" {
-		binPath := r.confBuilder.WorkDir + "/" + lang.BinaryFile
+		binPath := "/tmp" + "/" + lang.BinaryFile
 		binaryBytes, err = r.ExtractBinary(ctx, resp.ID, binPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to extract compiled binary: %w ", err)
@@ -111,7 +119,7 @@ func (r *DockerRunner) RunTest(
 	timeLimSec float64,
 	memoryLimMb int64) (*domain.ExecutionResult, error) {
 
-	contConf, hostConf := r.confBuilder.BuildRunCmd(lang.DockerImage, lang.RunCmd, timeLimSec, memoryLimMb)
+	contConf, hostConf := r.confBuilder.BuildRunCmd(lang.DockerImage, lang.RunCmd, 1, memoryLimMb)
 
 	resp, err := r.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     contConf,
@@ -132,18 +140,10 @@ func (r *DockerRunner) RunTest(
 		targetFileName = lang.SourceFile //для интерпретируемых языков
 	}
 
-	tarReader, err := createTarArchive(targetFileName, codeOrBin)
+	tarReader, err := createTarArchiveForRun(targetFileName, []byte(input), codeOrBin)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to archive content: %w", err)
-	}
-
-	_, err = r.cli.CopyToContainer(ctx, resp.ID, client.CopyToContainerOptions{
-		DestinationPath: r.confBuilder.WorkDir,
-		Content:         tarReader})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to copy content to run container, %w", err)
 	}
 
 	attachResp, err := r.cli.ContainerAttach(ctx, resp.ID, client.ContainerAttachOptions{
@@ -158,28 +158,24 @@ func (r *DockerRunner) RunTest(
 
 	defer attachResp.Close()
 
-	startTime := time.Now()
-	_, err = r.cli.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to start run container: %w", err)
-	}
-
 	go func() {
-		type closeWriter interface {
-			CloseWrite() error
+		_, err := io.Copy(attachResp.Conn, tarReader)
+		if err != nil {
+			slog.Error("failed to copy tar to container stdin", slog.Any("error", err))
 		}
-
-		if cw, ok := attachResp.Conn.(closeWriter); ok {
-			_ = cw.CloseWrite()
-		} else {
-			attachResp.Close()
-		}
+		_ = attachResp.CloseWrite()
 	}()
 
 	var outBuf, errBuf bytes.Buffer
 	go func() {
 		_, _ = stdcopy.StdCopy(&outBuf, &errBuf, attachResp.Reader)
 	}()
+
+	startTime := time.Now()
+	_, err = r.cli.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to start run container: %w", err)
+	}
 
 	tleDuration := time.Duration((timeLimSec + 0.05) * float64(time.Second))
 

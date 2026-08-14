@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 )
 
 type TaskHandler struct {
@@ -35,17 +34,19 @@ func (h *TaskHandler) Judge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctxTimeout, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	//	ctxTimeout, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 
-	defer cancel()
+	//	defer cancel()
 
-	if judgeErr := h.svr.JudgeSubmission(ctxTimeout, id); judgeErr != nil {
+	status, judgeErr := h.svr.JudgeSubmission(r.Context(), id)
+
+	if judgeErr != nil {
 		switch {
 		case errors.Is(judgeErr, context.DeadlineExceeded):
 			slog.Error("Judge failed : deadline of responce from bd", slog.Any("err", judgeErr))
 			responces.ResponseError(w, http.StatusGatewayTimeout, "Internal server problem", "Try again later")
 		case errors.Is(judgeErr, errs.ErrNotFound):
-			slog.Error("Judge failed : task not found", slog.Any("err", judgeErr))
+			slog.Error("Judge failed : sub not found", slog.Any("err", judgeErr))
 			responces.ResponseError(w, http.StatusNotFound, "Non-existed submission id", "Write correct id")
 		default:
 			slog.Error("Judge failed : bd error", slog.Any("err", judgeErr))
@@ -56,5 +57,5 @@ func (h *TaskHandler) Judge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("Submission was judged succesfully", slog.Int64("id", id))
-	responces.ResponseJson(w, http.StatusAccepted, JudgeOutput{Status: "OK", Id: id})
+	responces.ResponseJson(w, http.StatusAccepted, JudgeOutput{Status: status, Id: id})
 }

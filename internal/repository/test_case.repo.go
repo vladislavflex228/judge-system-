@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -118,8 +117,6 @@ func (t *TestRepository) GetAllTestsByIdSlice(ctx context.Context, testsId []int
 	if err != nil {
 		return nil, fmt.Errorf("test_case repository : get all tests by id slice : %w", err)
 	}
-
-	slog.Info("Тут")
 
 	defer row_cursor.Close()
 
