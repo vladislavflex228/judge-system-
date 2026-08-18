@@ -5,17 +5,18 @@ import (
 	"errors"
 	"judge-system/internal/errs"
 	"judge-system/internal/responces"
-	"judge-system/internal/service"
+	"judge-system/internal/service/judge"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 type TaskHandler struct {
-	svr service.JudgeService
+	svr judge.JudgeService
 }
 
-func NewTaskHandler(svr service.JudgeService) *TaskHandler {
+func NewTaskHandler(svr judge.JudgeService) *TaskHandler {
 	return &TaskHandler{svr: svr}
 }
 
@@ -34,11 +35,11 @@ func (h *TaskHandler) Judge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//	ctxTimeout, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctxTimeout, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 
-	//	defer cancel()
+	defer cancel()
 
-	status, judgeErr := h.svr.JudgeSubmission(r.Context(), id)
+	status, judgeErr := h.svr.JudgeSubmission(ctxTimeout, id)
 
 	if judgeErr != nil {
 		switch {
@@ -48,6 +49,12 @@ func (h *TaskHandler) Judge(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(judgeErr, errs.ErrNotFound):
 			slog.Error("Judge failed : sub not found", slog.Any("err", judgeErr))
 			responces.ResponseError(w, http.StatusNotFound, "Non-existed submission id", "Write correct id")
+		case errors.Is(judgeErr, errs.ErrWrongUserIDFormat):
+			slog.Error("Judge failed : wrong user id", slog.Any("err", judgeErr))
+			responces.ResponseError(w, http.StatusUnauthorized, "Wrong user id", "Write correct id")
+		case errors.Is(judgeErr, errs.ErrUserDiscrepancy):
+			slog.Error("Judge failed : user discrepancy", slog.Any("err", judgeErr))
+			responces.ResponseError(w, http.StatusForbidden, "Wrong sub id", "Write your submission id")
 		default:
 			slog.Error("Judge failed : bd error", slog.Any("err", judgeErr))
 			responces.ResponseError(w, http.StatusInternalServerError, "Internal server problem", "Try again later")

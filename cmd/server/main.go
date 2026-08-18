@@ -6,11 +6,13 @@ import (
 	baseConfig "judge-system/internal/config"
 	"judge-system/internal/database"
 	"judge-system/internal/handler"
+	"judge-system/internal/judge/config"
 	judgeConfig "judge-system/internal/judge/config"
 	"judge-system/internal/judge/runner"
 	"judge-system/internal/middleware"
 	"judge-system/internal/repository"
 	"judge-system/internal/service"
+	"judge-system/internal/service/judge"
 	"log/slog"
 	"net/http"
 
@@ -64,7 +66,7 @@ func main() {
 		return
 	}
 
-	judgeService := service.NewJudgeService(subRepo, langRepo, taskRepo, testRepo, runner)
+	judgeService := judge.NewJudgeService(subRepo, langRepo, taskRepo, testRepo, runner, config.Registry)
 	judgeHandler := handler.NewTaskHandler(judgeService)
 
 	r.Group(func(r chi.Router) {

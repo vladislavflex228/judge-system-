@@ -1,12 +1,12 @@
-package service
+package judge
 
 import (
 	"context"
 	"errors"
-	"fmt"
 	"judge-system/internal/errs"
 	"judge-system/internal/judge/config"
 	"judge-system/internal/judge/domain"
+	"judge-system/internal/middleware"
 	"judge-system/internal/models"
 	"log/slog"
 	"strings"
@@ -35,16 +35,17 @@ type JudgeService interface {
 }
 
 type judgeService struct {
-	subRepo  JudgeSubmissionRepository
-	langRepo JudgeLanguageRepository
-	taskRepo JudgeTaskRepository
-	testRepo JudgeTestRepository
-	runner   domain.CodeRunner
+	subRepo     JudgeSubmissionRepository
+	langRepo    JudgeLanguageRepository
+	taskRepo    JudgeTaskRepository
+	testRepo    JudgeTestRepository
+	runner      domain.CodeRunner
+	langConfigs map[string]config.LanguageConfig
 }
 
 func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) (string, error) {
 
-	if id < 0 {
+	if id <= 0 {
 		return "", errs.ErrInvalidInput
 	}
 
@@ -55,6 +56,16 @@ func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) (string, e
 		}
 
 		return "", err
+	}
+
+	userId, ok := ctx.Value(middleware.UserIDKey).(int64)
+
+	if !ok {
+		return "", errs.ErrWrongUserIDFormat
+	}
+
+	if userId != sub.UserID {
+		return "", errs.ErrUserDiscrepancy
 	}
 
 	code := sub.Code
@@ -80,7 +91,7 @@ func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) (string, e
 	langConfig, ok := config.Registry[lang.Slug]
 
 	if !ok {
-		return "", fmt.Errorf("Undefined Language")
+		return "", errs.ErrUndefinedLanguage
 	}
 
 	testCasesId, err := s.subRepo.GetAllTestsIdForSubmission(ctx, id)
@@ -128,8 +139,6 @@ func (s *judgeService) JudgeSubmission(ctx context.Context, id int64) (string, e
 			int64(task.MemoryLimit),
 		)
 
-		slog.Info("anything")
-
 		if err != nil {
 			slog.Error("Runtime system err", slog.Any("error", err))
 			if runExeRes != nil {
@@ -167,12 +176,14 @@ func NewJudgeService(
 	langRepo JudgeLanguageRepository,
 	taskRepo JudgeTaskRepository,
 	testRepo JudgeTestRepository,
-	runner domain.CodeRunner) JudgeService {
+	runner domain.CodeRunner,
+	langConfigs map[string]config.LanguageConfig) JudgeService {
 
 	return &judgeService{
-		subRepo:  subRepo,
-		langRepo: langRepo,
-		taskRepo: taskRepo,
-		testRepo: testRepo,
-		runner:   runner}
+		subRepo:     subRepo,
+		langRepo:    langRepo,
+		taskRepo:    taskRepo,
+		testRepo:    testRepo,
+		runner:      runner,
+		langConfigs: langConfigs}
 }

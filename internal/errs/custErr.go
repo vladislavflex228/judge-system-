@@ -13,4 +13,8 @@ var (
 	ErrLanguageNotFound    = errors.New("language not found")
 	ErrTestNotFound        = errors.New("test_case not found")
 	ErrEmptySlice          = errors.New("empty slice")
+	ErrUserDiscrepancy     = errors.New("You cannot get submission that was sent by another user")
+	ErrWrongUserIDFormat   = errors.New("wrong user id format")
+	ErrDataBase            = errors.New("db error")
+	ErrUndefinedLanguage   = errors.New("Undefined language")
 )

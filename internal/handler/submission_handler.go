@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"judge-system/internal/errs"
+	"judge-system/internal/middleware"
 	"judge-system/internal/responces"
 	"judge-system/internal/service"
 	"log/slog"
@@ -35,7 +36,15 @@ func (h *SubmissionHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	defer cancel()
 
-	sub, subErr := h.svr.CreateSubmission(ctx, dto)
+	userId, ok := r.Context().Value(middleware.UserIDKey).(int64)
+
+	if !ok {
+		slog.Warn("Create submission failed : UserIDKey bad format")
+		responces.ResponseError(w, http.StatusBadRequest, "Invalid userID format", "Expected type int64")
+		return
+	}
+
+	sub, subErr := h.svr.CreateSubmission(ctx, dto, userId)
 
 	if subErr != nil {
 		switch {
@@ -87,6 +96,19 @@ func (h *SubmissionHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 		return
 
+	}
+
+	userId, ok := r.Context().Value(middleware.UserIDKey).(int64)
+
+	if !ok {
+		slog.Warn("Get submission failed : UserIDKey bad format")
+		responces.ResponseError(w, http.StatusUnauthorized, "Invalid userID", "Expected type int64")
+		return
+	}
+
+	if userId != sub.UserID {
+		slog.Warn("Get submission failed : submission was sent by another user")
+		responces.ResponseError(w, http.StatusForbidden, "You cannot get submission that was sent by another user", "Sent your subs id")
 	}
 
 	slog.Info("Submission was acquiered", slog.Int64("id", id))

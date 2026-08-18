@@ -10,7 +10,6 @@ import (
 
 type CreateSubmissionDTO struct { // Структура-состояние Data - Transfer - Object
 	TaskID     int64  `json:"task_id"`
-	UserID     int64  `json:"user_id"`
 	LanguageID int    `json:"language_id"`
 	Code       string `json:"code"`
 }
@@ -25,7 +24,7 @@ type TaskRepository interface {
 }
 
 type SubmissionService interface {
-	CreateSubmission(ctx context.Context, dto CreateSubmissionDTO) (*models.Submission, error)
+	CreateSubmission(ctx context.Context, dto CreateSubmissionDTO, userId int64) (*models.Submission, error)
 	GetSubmissionById(ctx context.Context, id int64) (*models.Submission, error)
 }
 
@@ -34,8 +33,8 @@ type submissionService struct { // Структура-сервис Behavior
 	taskRepo TaskRepository
 }
 
-func (s *submissionService) CreateSubmission(ctx context.Context, dto CreateSubmissionDTO) (*models.Submission, error) {
-	if dto.UserID <= 0 || dto.TaskID <= 0 || dto.LanguageID <= 0 || dto.Code == "" {
+func (s *submissionService) CreateSubmission(ctx context.Context, dto CreateSubmissionDTO, userId int64) (*models.Submission, error) {
+	if userId <= 0 || dto.TaskID <= 0 || dto.LanguageID <= 0 || dto.Code == "" {
 		return nil, errs.ErrInvalidInput
 	}
 
@@ -55,7 +54,7 @@ func (s *submissionService) CreateSubmission(ctx context.Context, dto CreateSubm
 		return nil, err
 	}
 
-	sub := models.NewSubmission(dto.TaskID, dto.UserID, dto.LanguageID, 0, 0, dto.Code, "pending", time.Now())
+	sub := models.NewSubmission(dto.TaskID, userId, dto.LanguageID, 0, 0, dto.Code, "pending", time.Now())
 
 	if err := s.subRepo.Create(ctx, sub); err != nil {
 		return nil, err
